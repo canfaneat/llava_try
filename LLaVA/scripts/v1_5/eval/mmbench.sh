@@ -14,12 +14,12 @@ python -m llava.eval.model_vqa_mmbench \
     --temperature 0 \
     "$@" # Pass all script arguments
 # Create directory for upload based on the checkpoint name
-UPLOAD_DIR="./playground/data/eval/mmbench/answers_upload/$SPLIT"
+ UPLOAD_DIR="/kaggle/working/output/answers_upload/$SPLIT"
 mkdir -p "$UPLOAD_DIR"
 
-# Run the conversion script using the extracted checkpoint name
+        # Run the conversion script using the extracted checkpoint name
 python scripts/convert_mmbench_for_submission.py \
-    --annotation-file ./playground/data/eval/mmbench/$SPLIT.tsv \
-    --result-dir ./playground/data/eval/mmbench/answers/$SPLIT \
+    --annotation-file /kaggle/input/mmbench/mmbench_dev_20230712.tsv \
+    --result-dir /kaggle/working/output/answers/$SPLIT \
     --upload-dir "$UPLOAD_DIR" \
     --experiment "$CKPT"
