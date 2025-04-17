@@ -8,12 +8,11 @@ CKPT=$(basename "$MODEL_PATH_ARG") # Extract the last part of the path (e.g., ll
 
 # Run the evaluation using all arguments passed to the script
 python -m llava.eval.model_vqa_mmbench \
-    --question-file ./playground/data/eval/mmbench/$SPLIT.tsv \
-    --answers-file ./playground/data/eval/mmbench/answers/$SPLIT/$CKPT.jsonl \
+    --question-file /kaggle/input/mmbench/mmbench_dev_20230712.tsv \
+    --answers-file /kaggle/working/output/answers/$SPLIT/$CKPT.jsonl \
     --single-pred-prompt \
     --temperature 0 \
-    "$@" # Pass all script arguments (like --model-path, --model-base, --conv-mode) to the python script
-
+    "$@" # Pass all script arguments
 # Create directory for upload based on the checkpoint name
 UPLOAD_DIR="./playground/data/eval/mmbench/answers_upload/$SPLIT"
 mkdir -p "$UPLOAD_DIR"
