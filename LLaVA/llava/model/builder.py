@@ -19,10 +19,10 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
-# Make sure necessary LLaVA classes are imported correctly
+# Ensure necessary LLaVA classes are imported correctly
 from llava.model import LlavaLlamaForCausalLM, LlavaMistralForCausalLM, LlavaMptForCausalLM
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-# Ensure this import works
+# Explicitly import CLIPVisionTower
 try:
     from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower
 except ImportError as e:
@@ -30,24 +30,23 @@ except ImportError as e:
     CLIPVisionTower = None # Define as None to avoid subsequent NameError
 
 
-# Ensure default precision is float16 (load_8bit=False, load_4bit=False)
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
+# *** 修改: 默认加载方式改为 8-bit ***
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
 
     # Handle device mapping for CUDA vs non-CUDA
     if device != "cuda":
         kwargs['device_map'] = {"": device}
         print(f"Warning: Loading model on device '{device}'. CUDA acceleration will be unavailable.")
     else:
-        # Pass the intended device_map (e.g., "auto") for CUDA case
+        # Use the intended device_map (should be "auto" for T4x2)
         kwargs['device_map'] = device_map
         print(f"Using device_map: {kwargs['device_map']}")
 
-    # Handle quantization flags
+    # Handle quantization flags (defaulting to 8-bit)
     if load_8bit:
         print("Loading model in 8bit")
         kwargs['load_in_8bit'] = True
-        # Ensure torch_dtype is not set when using 8bit
-        kwargs.pop('torch_dtype', None)
+        kwargs.pop('torch_dtype', None) # 8bit incompatible with torch_dtype
     elif load_4bit:
         print("Loading model in 4bit")
         kwargs['load_in_4bit'] = True
@@ -57,173 +56,138 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type='nf4'
         )
-        # Ensure torch_dtype is not set when using 4bit
-        kwargs.pop('torch_dtype', None)
+        kwargs.pop('torch_dtype', None) # 4bit incompatible with torch_dtype
     else:
+        # Fallback to float16 if neither 8bit nor 4bit is explicitly True
         print("Loading model in float16")
         kwargs['torch_dtype'] = torch.float16
 
-    # Flash attention (Optional)
+    # Flash attention (Optional - likely incompatible with 8/4 bit)
     if use_flash_attn:
-        # Check if FlashAttention is available and compatible before setting
-        # (Simple check here, more robust checks might be needed)
-        try:
-            import flash_attn
-            print("Setting attn_implementation to flash_attention_2")
-            kwargs['attn_implementation'] = 'flash_attention_2'
-        except ImportError:
-            print("FlashAttention not installed, using default attention.")
+        if not load_8bit and not load_4bit:
+            try:
+                import flash_attn
+                print("Setting attn_implementation to flash_attention_2")
+                kwargs['attn_implementation'] = 'flash_attention_2'
+            except ImportError:
+                print("FlashAttention specified but not installed, using default attention.")
+        else:
+            print("FlashAttention specified but loading in 8/4 bit, ignoring.")
 
 
     if 'llava' in model_name.lower():
         # Load LLaVA model variations
-        if 'lora' in model_name.lower() and model_base is None:
-            warnings.warn('LoRA model specified but no model_base provided. Loading LoRA might fail.')
-            # Attempt to load as full model from model_path, but behavior might be undefined
-            print(f"Warning: Attempting to load LoRA model from {model_path} without base.")
-            tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, local_files_only=True)
-            model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
-        elif 'lora' in model_name.lower() and model_base is not None:
-            # Load LLaVA LoRA model
+        if 'lora' in model_name.lower() and model_base is not None:
+            # --- LoRA LLaVA 模型加载 (保持不变，确保 local_files_only=True) ---
             print("Loading LLaVA LoRA weights")
-            from llava.model.language_model.llava_llama import LlavaConfig # Ensure correct import path
-            # Load base tokenizer first
+            from llava.model.language_model.llava_llama import LlavaConfig
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
-            # Load base config
             base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=True)
-            # Load LoRA specific config from model_path
             lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path, local_files_only=True)
-            # Merge LoRA specific attributes into base config (carefully)
             print("Merging LoRA config fields into base config...")
             for key, value in lora_cfg_pretrained.to_dict().items():
-                 setattr(base_config, key, value) # Assume LoRA config keys are needed
+                 setattr(base_config, key, value)
 
             print('Loading LLaVA from base model...')
-            # Load base model weights using the merged config
             model = LlavaLlamaForCausalLM.from_pretrained(
-                model_base,
-                low_cpu_mem_usage=True,
-                config=base_config, # Use the merged config
-                local_files_only=True,
-                **kwargs # Pass device_map, dtype etc.
+                model_base, low_cpu_mem_usage=True, config=base_config, local_files_only=True, **kwargs
             )
-
-            # Handle token embeddings resizing if needed (copied from original logic)
+            # Handle token embeddings resizing
             token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
             if model.lm_head.weight.shape[0] != token_num:
                 model.lm_head.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
                 model.model.embed_tokens.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
-
-            # Load non-LoRA trainable weights (projector etc.)
+            # Load non-LoRA trainable weights
             print('Loading additional LLaVA weights (non-lora trainables)...')
             non_lora_path = os.path.join(model_path, 'non_lora_trainables.bin')
             if os.path.exists(non_lora_path):
                 non_lora_trainables = torch.load(non_lora_path, map_location='cpu')
-            else:
-                 warnings.warn(f"non_lora_trainables.bin not found locally at {non_lora_path}. If loading from Hub, ensure network access.")
-                 # Optional: Attempt Hub download if needed, requires careful path handling
-                 non_lora_trainables = {} # Assign empty dict if not found
-
-            # Clean keys and load state dict
-            non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
-            if any(k.startswith('model.model.') for k in non_lora_trainables):
-                non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
-            model.load_state_dict(non_lora_trainables, strict=False)
-
+                non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
+                if any(k.startswith('model.model.') for k in non_lora_trainables):
+                    non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
+                model.load_state_dict(non_lora_trainables, strict=False)
+            else: warnings.warn(f"non_lora_trainables.bin not found locally at {non_lora_path}.")
             # Load LoRA adapter weights
             from peft import PeftModel
             print('Loading LoRA adapter weights...')
-            model = PeftModel.from_pretrained(model, model_path, local_files_only=True) # Specify local loading for adapter
+            model = PeftModel.from_pretrained(model, model_path, local_files_only=True)
             print('Merging LoRA weights...')
             model = model.merge_and_unload()
             print('LoRA Model is loaded and merged...')
+            # LoRA model might need dtype conversion after merge if base wasn't quantized
+            if not kwargs.get('load_in_8bit') and not kwargs.get('load_in_4bit'):
+                model.to(kwargs.get('torch_dtype', torch.float16))
 
         elif model_base is not None:
-            # Non-LoRA case: model_path has projector, model_base has LLM weights + base config
+            # --- 非 LoRA LLaVA 模型加载 ---
             print(f'Loading LLM base model from: {model_base} locally')
-            # Load base tokenizer locally
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
-
-            # Load base config (e.g., LlamaConfig) first
             print(f'Loading base model config from: {model_base}')
             base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=True)
-
-            # Load LLaVA specific configuration from model_path
             print(f'Loading LLaVA configuration from: {model_path}')
             llava_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
 
-            # *** 关键改动: 在合并前就确定最终的视觉塔路径 ***
+            # 确定并强制设置最终的视觉塔路径
             print("准备合并配置，并确定视觉塔路径...")
-            llava_specific_keys_to_merge = [ # 定义要合并的 LLaVA 特有 key
-                "mm_hidden_size", "mm_projector_type",
-                "mm_vision_select_layer", "mm_vision_select_feature",
-                "mm_use_im_start_end", "mm_use_im_patch_token", "image_aspect_ratio",
+            llava_specific_keys_to_merge = [
+                "mm_hidden_size", "mm_projector_type", "mm_vision_select_layer",
+                "mm_vision_select_feature", "mm_use_im_start_end",
+                "mm_use_im_patch_token", "image_aspect_ratio",
             ]
-            final_vision_tower_path = getattr(llava_config, "mm_vision_tower", "openai/clip-vit-large-patch14-336") # 先获取 LLaVA 配置中的值
-            kaggle_clip_path = "/kaggle/input/openai-clip-vit-large-patch14-336" # Kaggle 路径
-
-            # 检查 Kaggle 路径是否有效，如果有效，则用它覆盖配置中的 mm_vision_tower
+            final_vision_tower_path = getattr(llava_config, "mm_vision_tower", "openai/clip-vit-large-patch14-336")
+            kaggle_clip_path = "/kaggle/input/openai-clip-vit-large-patch14-336"
             if os.path.exists(kaggle_clip_path) and os.path.isfile(os.path.join(kaggle_clip_path, 'config.json')):
                 print(f"  检测到有效的 Kaggle CLIP 路径: {kaggle_clip_path}")
                 final_vision_tower_path = kaggle_clip_path
             else:
                 print(f"  Kaggle CLIP 路径 ('{kaggle_clip_path}') 无效或未找到，将使用配置值: '{final_vision_tower_path}'")
 
-            # 更新基础配置: 只更新 LLaVA 特有 key 和最终确定的视觉塔路径
+            # 更新基础配置
             for key in llava_specific_keys_to_merge:
                 if hasattr(llava_config, key):
                     value = getattr(llava_config, key)
                     print(f"  合并: base_config.{key} = {value}")
                     setattr(base_config, key, value)
-            # 强制设置视觉塔路径为最终确定的路径
             print(f"  最终设置: base_config.mm_vision_tower = {final_vision_tower_path}")
             setattr(base_config, "mm_vision_tower", final_vision_tower_path)
 
-            # Determine the correct LLaVA class based on the *base* config's model_type
-            # (The base config should dictate the LLM architecture)
+            # 确定 LLaVA 类
             model_type = getattr(base_config, "model_type", "")
-            if 'mpt' in model_type:
-                llava_class = LlavaMptForCausalLM
-                print("Determined base model type: MPT")
-            elif 'mistral' in model_type:
-                llava_class = LlavaMistralForCausalLM
-                print("Determined base model type: Mistral")
-            else: # Assume Llama
-                llava_class = LlavaLlamaForCausalLM
-                print("Determined base model type: Llama")
+            if 'mpt' in model_type: llava_class = LlavaMptForCausalLM
+            elif 'mistral' in model_type: llava_class = LlavaMistralForCausalLM
+            else: llava_class = LlavaLlamaForCausalLM
+            print(f"确定模型类: {llava_class.__name__} (基于基础模型类型 '{model_type}')")
 
-            print(f"Loading model as {llava_class.__name__} using base path and updated base config...")
-            # Load the model using the LLaVA class, pointing to the base path for weights,
-            # applying the *updated* base_config (which contains core LLM + necessary MM fields).
+            print(f"加载模型权重自: {model_base}，使用更新后的基础配置...")
+            # *** 修改: 确保使用 device_map="auto" ***
             model = llava_class.from_pretrained(
-                model_base,             # Load weights FROM BASE path
-                low_cpu_mem_usage=True,
-                config=base_config,     # Apply the *updated* base_config
-                local_files_only=True,  # Ensure base weights are loaded locally
-                **kwargs                # Pass merged kwargs including device_map and dtype
+                model_base,
+                config=base_config,
+                low_cpu_mem_usage=True, # 建议保留以优化加载
+                local_files_only=True,
+                # device_map="auto", # 应该由 kwargs 传入
+                **kwargs # 传递 device_map="auto", load_in_8bit=True 等
             )
 
-            # Load the mm_projector weights from model_path
-            print("Loading mm_projector weights...")
+            # 加载 mm_projector 权重
+            print("加载 mm_projector 权重...")
             projector_path = os.path.join(model_path, 'mm_projector.bin')
             if os.path.exists(projector_path):
                 mm_projector_weights = torch.load(projector_path, map_location='cpu')
-                # Use target dtype specified in kwargs or default to float16
-                target_dtype = kwargs.get('torch_dtype', torch.float16)
+                # 注意：如果主模型是 8bit，投影层是否需要转换？通常投影层保持 FP16
+                target_dtype = torch.float16 if kwargs.get('load_in_8bit') or kwargs.get('load_in_4bit') else kwargs.get('torch_dtype', torch.float16)
+                print(f"Converting projector weights to {target_dtype}")
                 mm_projector_weights = {k: v.to(target_dtype) for k, v in mm_projector_weights.items()}
                 model.load_state_dict(mm_projector_weights, strict=False)
-                print("MM projector weights loaded.")
+                print("MM projector 权重加载完成。")
             else:
-                warnings.warn(f"MM projector file not found at {projector_path}")
+                warnings.warn(f"MM projector 文件未在 {projector_path} 找到")
 
         else:
-            # model_base is None, load full LLaVA model from model_path
-            print(f"Loading full LLaVA model from: {model_path} locally")
-            # Determine model type from config in model_path
+            # --- 加载完整 LLaVA 模型 (无 base) ---
+            print(f"加载完整 LLaVA 模型自: {model_path} (本地)")
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
             model_type = getattr(config, "model_type", "")
-
-            # Select class based on model type found in the full model's config
             if 'mpt' in model_type:
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, local_files_only=True)
                 model = LlavaMptForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
@@ -233,67 +197,65 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             else: # Assume Llama
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, local_files_only=True)
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
+
+    # --- 非 LLaVA 标准模型加载 ---
     else:
-        # Load standard language model only (non-LLaVA)
-        print(f"Loading standard non-LLaVA model: {model_name}")
-        if model_base is not None: # This case seems less likely for non-LLaVA, maybe PEFT?
+        print(f"加载标准非 LLaVA 模型: {model_name}")
+        # (逻辑保持不变，确保传入 **kwargs)
+        if model_base is not None:
             from peft import PeftModel
             print("Loading PEFT model")
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
-            # Load base model using AutoClass
             model = AutoModelForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
             print(f"Loading LoRA weights from {model_path}")
             model = PeftModel.from_pretrained(model, model_path, local_files_only=True)
             print(f"Merging weights")
             model = model.merge_and_unload()
-            print('Convert to target dtype...')
-            model.to(kwargs.get('torch_dtype', torch.float16))
+            if not kwargs.get('load_in_8bit') and not kwargs.get('load_in_4bit'):
+                 print('Convert merged PEFT model to target dtype...')
+                 model.to(kwargs.get('torch_dtype', torch.float16))
         else:
-            # Standard model from model_path
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
             model_type = getattr(config, "model_type", "")
-            use_fast = 'mpt' in model_type # Example heuristic
+            use_fast = 'mpt' in model_type
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=use_fast, local_files_only=True)
             model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, local_files_only=True, **kwargs)
 
+    # --- 视觉塔和图像处理器加载 ---
     image_processor = None
-
-    # Handle vision tower loading consistently for LLaVA models
     if 'llava' in model_name.lower() or getattr(model.config, 'mm_vision_tower', None):
-        print("Processing LLaVA/Vision related components...")
-        # Add tokens if necessary (check model config)
+        print("处理 LLaVA 视觉组件...")
+        # 添加特殊 token
         mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
         mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
+        added_tokens = 0
         if mm_use_im_patch_token:
-            added_tokens = tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
-            if added_tokens > 0: print(f"Added {added_tokens} special image patch token.")
+            added_tokens += tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
         if mm_use_im_start_end:
-            added_tokens = tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)
-            if added_tokens > 0: print(f"Added {added_tokens} special image start/end tokens.")
-        # Important: Resize token embeddings after adding tokens
-        model.resize_token_embeddings(len(tokenizer))
+            added_tokens += tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)
+        if added_tokens > 0:
+            print(f"添加了 {added_tokens} 个特殊 token。")
+            model.resize_token_embeddings(len(tokenizer))
 
-        # Get vision tower instance from the loaded model
+        # 获取视觉塔实例
         vision_tower = model.get_vision_tower()
 
         if vision_tower is not None and CLIPVisionTower is not None:
             if not vision_tower.is_loaded:
-                # 获取最终确定的视觉塔路径 (应为 Kaggle 路径)
-                vision_tower_path = getattr(model.config, "mm_vision_tower")
+                vision_tower_path = getattr(model.config, "mm_vision_tower") # 应已包含正确路径
                 print(f"尝试从以下路径加载视觉塔: {vision_tower_path}")
                 try:
-                    # 加载视觉塔模型和处理器，强制本地，使用目标数据类型
+                    # 加载视觉塔，强制本地，使用 float16 (视觉塔通常不用 8bit)
                     vision_tower.load_model(
-                        device_map=None, # 让它跟随主模型设备映射
-                        torch_dtype=kwargs.get('torch_dtype', torch.float16),
-                        local_files_only=True # *** 强制本地加载视觉塔组件 ***
+                        device_map=None, # 跟随主模型映射
+                        torch_dtype=torch.float16, # 视觉塔通常用 float16
+                        local_files_only=True
                     )
                     print("视觉塔加载成功。")
-                    image_processor = vision_tower.image_processor # 获取加载后的处理器
+                    image_processor = vision_tower.image_processor
                 except Exception as e:
                      print(f"加载视觉塔时出错: {e}")
                      warnings.warn("视觉塔加载失败，图像处理将不可用。")
-                     # image_processor 保持为 None
             else:
                 print("视觉塔先前已加载。")
                 image_processor = vision_tower.image_processor
@@ -302,13 +264,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         else: # vision_tower is None
             warnings.warn("从模型获取的 vision_tower 为 None，图像处理将不可用。")
 
-    # Determine context length
+    # 确定上下文长度
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
     else:
-        # Provide a reasonable default or check specific model type defaults
-        context_len = getattr(model.config, "max_position_embeddings", 2048) # Check max_position_embeddings too
-        print(f"Warning: max_sequence_length not found in config, using max_position_embeddings or default: {context_len}")
+        context_len = getattr(model.config, "max_position_embeddings", 2048)
+        print(f"未在配置中找到 max_sequence_length，使用 max_position_embeddings 或默认值: {context_len}")
 
     print("模型加载流程结束。")
     return tokenizer, model, image_processor, context_len
