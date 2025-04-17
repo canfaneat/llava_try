@@ -1,0 +1,74 @@
+MM projector weights loaded.
+  0%|                                                         | 0/4377 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\eval\model_vqa_mmbench.py", line 160, in <module>
+    eval_model(args)
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\eval\model_vqa_mmbench.py", line 111, in eval_model
+    output_ids = model.generate(
+                 ^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\utils\_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\model\language_model\llava_llama.py", line 125, in generate
+    ) = self.prepare_inputs_labels_for_multimodal(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\model\llava_arch.py", line 202, in prepare_inputs_labels_for_multimodal
+    image_features = self.encode_images(images)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\model\llava_arch.py", line 141, in encode_images
+    image_features = self.get_model().get_vision_tower()(images)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\utils\_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\pcdpm_project\LLaVA_fork\LLaVA\llava\model\multimodal_encoder\clip_encoder.py", line 81, in forward
+    image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\transformers\models\clip\modeling_clip.py", line 917, in forward
+    return self.vision_model(
+           ^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\transformers\models\clip\modeling_clip.py", line 841, in forward
+    hidden_states = self.embeddings(pixel_values)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\transformers\models\clip\modeling_clip.py", line 182, in forward
+    patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\conv.py", line 460, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda\envs\pcdpm\Lib\site-packages\torch\nn\modules\conv.py", line 456, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: "slow_conv2d_cpu" not implemented for 'Half'

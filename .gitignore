@@ -1,0 +1,31 @@
+# Large files and directories
+models/
+data/
+LLaVA_fork.zip
+playground/data/
+playground/checkpoints/ # If you have checkpoints here
+
+# Log files
+*.log
+newest wrong.txt # Your specific log file
+
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+model_offload/
+
+# IDE specific files (optional but good practice)
+.vscode/
+.idea/
+*.swp
+*~
+
+# Windows specific
+Thumbs.db

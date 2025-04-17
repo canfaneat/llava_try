@@ -1,0 +1,20 @@
+model_name_or_path: ./models/vicuna-7b-v1.5
+vision_tower: ./models/clip-vit-large-patch14
+mm_projector_type: mlp
+
+freeze_backbone: true
+output_dir: ./output/baseline_coco_mlp
+num_train_epochs: 3
+learning_rate: 1e-4
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
+bf16: true
+
+data_path: D:\pcdpm_project\LLaVA_fork\data/data/coco_llava_format.json
+image_folder: ./data/train2014
+
+save_strategy: epoch
+evaluation_strategy: epoch
+save_total_limit: 2
+remove_unused_columns: false
+
