@@ -2,7 +2,6 @@
 models/
 data/
 LLaVA_fork.zip
-playground/data/
 playground/checkpoints/ # If you have checkpoints here
 
 # Log files
