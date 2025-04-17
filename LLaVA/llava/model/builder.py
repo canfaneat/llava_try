@@ -22,7 +22,12 @@ import torch
 # Make sure necessary LLaVA classes are imported correctly
 from llava.model import LlavaLlamaForCausalLM, LlavaMistralForCausalLM, LlavaMptForCausalLM
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower # Ensure this import works
+# Ensure this import works
+try:
+    from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower
+except ImportError as e:
+    warnings.warn(f"Could not import CLIPVisionTower, vision capabilities might be affected: {e}")
+    CLIPVisionTower = None # Define as None to avoid subsequent NameError
 
 
 # Ensure default precision is float16 (load_8bit=False, load_4bit=False)
@@ -147,20 +152,32 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print(f'Loading LLaVA configuration from: {model_path}')
             llava_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
 
-            # **Crucial Change:** Update base config with ONLY LLaVA-specific multimodal attributes
-            # Avoid overwriting core LLM config attributes like decoder/generation params
-            print("Carefully merging necessary LLaVA config fields into base config...")
-            llava_specific_keys = [
-                "mm_vision_tower", "mm_hidden_size", "mm_projector_type",
+            # *** 关键改动: 在合并前就确定最终的视觉塔路径 ***
+            print("准备合并配置，并确定视觉塔路径...")
+            llava_specific_keys_to_merge = [ # 定义要合并的 LLaVA 特有 key
+                "mm_hidden_size", "mm_projector_type",
                 "mm_vision_select_layer", "mm_vision_select_feature",
-                "mm_use_im_start_end", "mm_use_im_patch_token",
-                "image_aspect_ratio", # Add other relevant mm_ keys if needed
+                "mm_use_im_start_end", "mm_use_im_patch_token", "image_aspect_ratio",
             ]
-            for key in llava_specific_keys:
+            final_vision_tower_path = getattr(llava_config, "mm_vision_tower", "openai/clip-vit-large-patch14-336") # 先获取 LLaVA 配置中的值
+            kaggle_clip_path = "/kaggle/input/openai-clip-vit-large-patch14-336" # Kaggle 路径
+
+            # 检查 Kaggle 路径是否有效，如果有效，则用它覆盖配置中的 mm_vision_tower
+            if os.path.exists(kaggle_clip_path) and os.path.isfile(os.path.join(kaggle_clip_path, 'config.json')):
+                print(f"  检测到有效的 Kaggle CLIP 路径: {kaggle_clip_path}")
+                final_vision_tower_path = kaggle_clip_path
+            else:
+                print(f"  Kaggle CLIP 路径 ('{kaggle_clip_path}') 无效或未找到，将使用配置值: '{final_vision_tower_path}'")
+
+            # 更新基础配置: 只更新 LLaVA 特有 key 和最终确定的视觉塔路径
+            for key in llava_specific_keys_to_merge:
                 if hasattr(llava_config, key):
                     value = getattr(llava_config, key)
-                    print(f"  Updating {key} = {value}")
+                    print(f"  合并: base_config.{key} = {value}")
                     setattr(base_config, key, value)
+            # 强制设置视觉塔路径为最终确定的路径
+            print(f"  最终设置: base_config.mm_vision_tower = {final_vision_tower_path}")
+            setattr(base_config, "mm_vision_tower", final_vision_tower_path)
 
             # Determine the correct LLaVA class based on the *base* config's model_type
             # (The base config should dictate the LLM architecture)
@@ -183,7 +200,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 low_cpu_mem_usage=True,
                 config=base_config,     # Apply the *updated* base_config
                 local_files_only=True,  # Ensure base weights are loaded locally
-                # device_map="auto",      # Use device_map from kwargs
                 **kwargs                # Pass merged kwargs including device_map and dtype
             )
 
@@ -260,31 +276,31 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         # Get vision tower instance from the loaded model
         vision_tower = model.get_vision_tower()
 
-        if vision_tower is not None:
+        if vision_tower is not None and CLIPVisionTower is not None:
             if not vision_tower.is_loaded:
-                vision_config_path_or_hf_id = getattr(model.config, "mm_vision_tower", "openai/clip-vit-large-patch14-336")
-                kaggle_clip_path = "/kaggle/input/openai-clip-vit-large-patch14-336" # Target Kaggle path
-
-                final_vision_path = vision_config_path_or_hf_id # Default to config value
-                # Check if Kaggle path exists and seems valid (e.g., contains config.json)
-                if os.path.exists(kaggle_clip_path) and os.path.isfile(os.path.join(kaggle_clip_path, 'config.json')):
-                     print(f"Attempting to use CLIP model from Kaggle Input: {kaggle_clip_path}")
-                     final_vision_path = kaggle_clip_path
-                     # Update the vision_tower's internal path reference before loading
-                     vision_tower.vision_tower_name = final_vision_path
-                else:
-                    print(f"Kaggle Input path for CLIP ('{kaggle_clip_path}') not found or invalid, using value from config: '{vision_config_path_or_hf_id}'")
-                    # Ensure the name reflects the actual source being used
-                    vision_tower.vision_tower_name = vision_config_path_or_hf_id
-
-                print(f"Loading vision tower weights from: {vision_tower.vision_tower_name}")
-                # Load vision tower weights. Let it infer device map from main model if possible (pass None)
-                # Pass target dtype from main kwargs
-                vision_tower.load_model(device_map=None, torch_dtype=kwargs.get('torch_dtype', torch.float16))
-                print("Vision tower weights loaded.")
-            image_processor = vision_tower.image_processor
-        else:
-            warnings.warn("Vision tower is None, image processing won't be available.")
+                # 获取最终确定的视觉塔路径 (应为 Kaggle 路径)
+                vision_tower_path = getattr(model.config, "mm_vision_tower")
+                print(f"尝试从以下路径加载视觉塔: {vision_tower_path}")
+                try:
+                    # 加载视觉塔模型和处理器，强制本地，使用目标数据类型
+                    vision_tower.load_model(
+                        device_map=None, # 让它跟随主模型设备映射
+                        torch_dtype=kwargs.get('torch_dtype', torch.float16),
+                        local_files_only=True # *** 强制本地加载视觉塔组件 ***
+                    )
+                    print("视觉塔加载成功。")
+                    image_processor = vision_tower.image_processor # 获取加载后的处理器
+                except Exception as e:
+                     print(f"加载视觉塔时出错: {e}")
+                     warnings.warn("视觉塔加载失败，图像处理将不可用。")
+                     # image_processor 保持为 None
+            else:
+                print("视觉塔先前已加载。")
+                image_processor = vision_tower.image_processor
+        elif CLIPVisionTower is None:
+             warnings.warn("CLIPVisionTower 未导入，无法加载视觉塔。")
+        else: # vision_tower is None
+            warnings.warn("从模型获取的 vision_tower 为 None，图像处理将不可用。")
 
     # Determine context length
     if hasattr(model.config, "max_sequence_length"):
@@ -294,4 +310,5 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         context_len = getattr(model.config, "max_position_embeddings", 2048) # Check max_position_embeddings too
         print(f"Warning: max_sequence_length not found in config, using max_position_embeddings or default: {context_len}")
 
+    print("模型加载流程结束。")
     return tokenizer, model, image_processor, context_len
