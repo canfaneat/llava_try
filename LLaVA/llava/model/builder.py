@@ -31,7 +31,7 @@ except ImportError as e:
 
 
 # *** 修改: 默认加载方式改为 8-bit ***
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, load_4bit=False, device_map="cuda:0", device="cuda", use_flash_attn=False, **kwargs):
 
     # Handle device mapping for CUDA vs non-CUDA
     if device != "cuda":
