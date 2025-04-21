@@ -78,19 +78,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
     if 'llava' in model_name.lower():
         # Load LLaVA model variations
         if 'lora' in model_name.lower() and model_base is not None:
-            # --- LoRA LLaVA 模型加载 (保持不变，确保 local_files_only=True) ---
+            # --- LoRA LLaVA 模型加载 (保持不变，确保 local_files_only=False) ---
             print("Loading LLaVA LoRA weights")
             from llava.model.language_model.llava_llama import LlavaConfig
-            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
-            base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=True)
-            lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path, local_files_only=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=False)
+            base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=False)
+            lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path, local_files_only=False)
             print("Merging LoRA config fields into base config...")
             for key, value in lora_cfg_pretrained.to_dict().items():
                  setattr(base_config, key, value)
 
             print('Loading LLaVA from base model...')
             model = LlavaLlamaForCausalLM.from_pretrained(
-                model_base, low_cpu_mem_usage=True, config=base_config, local_files_only=True, **kwargs
+                model_base, low_cpu_mem_usage=True, config=base_config, local_files_only=False, **kwargs
             )
             # Handle token embeddings resizing
             token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
@@ -110,7 +110,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
             # Load LoRA adapter weights
             from peft import PeftModel
             print('Loading LoRA adapter weights...')
-            model = PeftModel.from_pretrained(model, model_path, local_files_only=True)
+            model = PeftModel.from_pretrained(model, model_path, local_files_only=False)
             print('Merging LoRA weights...')
             model = model.merge_and_unload()
             print('LoRA Model is loaded and merged...')
@@ -121,11 +121,11 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
         elif model_base is not None:
             # --- 非 LoRA LLaVA 模型加载 ---
             print(f'Loading LLM base model from: {model_base} locally')
-            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=False)
             print(f'Loading base model config from: {model_base}')
-            base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=True)
+            base_config = AutoConfig.from_pretrained(model_base, trust_remote_code=True, local_files_only=False)
             print(f'Loading LLaVA configuration from: {model_path}')
-            llava_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
+            llava_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=False)
 
             # 确定并强制设置最终的视觉塔路径
             print("准备合并配置，并确定视觉塔路径...")
@@ -164,7 +164,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
                 model_base,
                 config=base_config,
                 low_cpu_mem_usage=True, # 建议保留以优化加载
-                local_files_only=True,
+                local_files_only=False,
                 # device_map="auto", # 应该由 kwargs 传入
                 **kwargs # 传递 device_map="auto", load_in_8bit=True 等
             )
@@ -186,17 +186,17 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
         else:
             # --- 加载完整 LLaVA 模型 (无 base) ---
             print(f"加载完整 LLaVA 模型自: {model_path} (本地)")
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=False)
             model_type = getattr(config, "model_type", "")
             if 'mpt' in model_type:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, local_files_only=True)
-                model = LlavaMptForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
+                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, local_files_only=False)
+                model = LlavaMptForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=False, **kwargs)
             elif 'mistral' in model_type:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
-                model = LlavaMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
+                tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=False)
+                model = LlavaMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=False, **kwargs)
             else: # Assume Llama
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, local_files_only=True)
-                model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
+                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, local_files_only=False)
+                model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, local_files_only=False, **kwargs)
 
     # --- 非 LLaVA 标准模型加载 ---
     else:
@@ -205,21 +205,21 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
         if model_base is not None:
             from peft import PeftModel
             print("Loading PEFT model")
-            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=True)
-            model = AutoModelForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, local_files_only=True, **kwargs)
+            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, local_files_only=False)
+            model = AutoModelForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, local_files_only=False, **kwargs)
             print(f"Loading LoRA weights from {model_path}")
-            model = PeftModel.from_pretrained(model, model_path, local_files_only=True)
+            model = PeftModel.from_pretrained(model, model_path, local_files_only=False)
             print(f"Merging weights")
             model = model.merge_and_unload()
             if not kwargs.get('load_in_8bit') and not kwargs.get('load_in_4bit'):
                  print('Convert merged PEFT model to target dtype...')
                  model.to(kwargs.get('torch_dtype', torch.float16))
         else:
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=True)
+            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, local_files_only=False)
             model_type = getattr(config, "model_type", "")
             use_fast = 'mpt' in model_type
-            tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=use_fast, local_files_only=True)
-            model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, local_files_only=True, **kwargs)
+            tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=use_fast, local_files_only=False)
+            model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, local_files_only=False, **kwargs)
 
     # --- 视觉塔和图像处理器加载 ---
     image_processor = None
@@ -249,7 +249,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
                     vision_tower.load_model(
                         device_map=None, # 跟随主模型映射
                         torch_dtype=torch.float16, # 视觉塔通常用 float16
-                        local_files_only=True
+                        local_files_only=False
                     )
                     print("视觉塔加载成功。")
                     image_processor = vision_tower.image_processor
