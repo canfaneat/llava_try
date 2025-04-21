@@ -11,7 +11,7 @@ python -m llava.eval.model_vqa_mmbench \
     --question-file /kaggle/input/mmbench/mmbench_dev_20230712.tsv \
     --answers-file /kaggle/working/output/answers/$SPLIT/$CKPT.jsonl \
     --single-pred-prompt \
-    --temperature 0 \
+    --temperature 0.7 \
     "$@" # Pass all script arguments
 # Create directory for upload based on the checkpoint name
  UPLOAD_DIR="/kaggle/working/output/answers_upload/$SPLIT"

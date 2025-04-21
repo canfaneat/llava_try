@@ -8,22 +8,28 @@ def parse_pred_ans(pred_text):
     """
     Extracts the first single uppercase letter (A, B, C, D) found in the prediction text.
     Handles simple cases like "A", "A.", "Answer: A", etc.
+    Improved to also find the first standalone letter if not at the beginning.
     Returns the letter or None if no valid option is found.
     """
+    if not isinstance(pred_text, str):
+        return None # Handle cases where input is not a string
     pred_text = pred_text.strip()
-    # Try to find a single capital letter A, B, C, or D, possibly surrounded by noise
-    # Example patterns: "A.", "A", "(A)", "Answer: A"
+
+    # 1. Try common patterns at the beginning (most reliable)
     match = re.search(r'^[(\s]*([A-D])[.)\s]*', pred_text, re.IGNORECASE)
     if match:
-        return match.group(1).upper() # Return the extracted letter in uppercase
+        return match.group(1).upper()
 
-    # Fallback: Check if the text itself is just one of the options
-    if pred_text in ['A', 'B', 'C', 'D']:
-         return pred_text
+    # 2. Fallback: Check if the text itself is just one of the options (case insensitive)
+    if pred_text.upper() in ['A', 'B', 'C', 'D']:
+         return pred_text.upper()
 
-    # More robust fallback: Check if the first non-whitespace character is A, B, C, or D
-    if pred_text and pred_text[0] in ['A', 'B', 'C', 'D']:
-        return pred_text[0]
+    # 3. Fallback: Find the first occurrence of A/B/C/D as a standalone letter
+    #    (surrounded by non-alphanumeric chars or start/end of string)
+    #    This helps find "... answer is A ..." or "... option B." but avoids matching words like "Apple"
+    match = re.search(r'(?<![a-zA-Z0-9])([A-D])(?![a-zA-Z0-9])', pred_text)
+    if match:
+        return match.group(1).upper() # Return the first such occurrence
 
     return None # Return None if no valid option letter is extracted
 

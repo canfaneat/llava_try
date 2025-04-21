@@ -72,6 +72,7 @@ def eval_model(args):
 
     print(f"Starting evaluation loop for {len(questions)} questions...")
     for index, row in tqdm(questions.iterrows(), total=len(questions)):
+        # DEBUG: Added limit for quick testing - REMOVE for full run
         if index >= 5:
            print("DEBUG: Reached sample limit for testing.")
            break
