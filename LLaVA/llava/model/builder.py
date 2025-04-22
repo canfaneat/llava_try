@@ -77,7 +77,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
     # Helper to check if path is local or HF identifier
     def is_local(path):
         # Check for common path separators or if the path actually exists locally
-        return path is not None and ('/' in path or '\' in path or os.path.exists(path))
+        return path is not None and ('/' in path or '\\' in path or os.path.exists(path))
 
     model_path_is_local = is_local(model_path)
     model_base_is_local = is_local(model_base)
