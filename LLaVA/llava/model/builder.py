@@ -163,10 +163,11 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=True, lo
             model = llava_class.from_pretrained(
                 model_base,
                 config=base_config,
-                low_cpu_mem_usage=True, # 建议保留以优化加载
+                low_cpu_mem_usage=True,
                 local_files_only=False,
-                # device_map="auto", # 应该由 kwargs 传入
-                **kwargs # 传递 device_map="auto", load_in_8bit=True 等
+                load_in_8bit=True,         # 显式启用 8-bit 量化（新版必需）
+                device_map="auto",         # 自动分配设备（Kaggle 单 GPU 场景）
+                torch_dtype=torch.float16  # 明确数据类型，避免与量化冲突
             )
 
             # 加载 mm_projector 权重
